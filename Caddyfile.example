@@ -1,0 +1,5 @@
+# Copy to Caddyfile and set DOMAIN to a DNS name pointing at your VPS.
+{$DOMAIN} {
+    encode zstd gzip
+    reverse_proxy app:8000
+}

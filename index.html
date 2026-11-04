@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instagram AI Content Factory</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">AI CONTENT FACTORY</div>
+      <h1>Контент-центр Instagram</h1>
+      <p class="muted">Генерация → согласование → публикация · часовой пояс {{ timezone }}</p>
+    </div>
+    <div class="top-pill">Публикация только после одобрения</div>
+  </header>
+
+  <main class="container">
+    <section class="stats">
+      <div class="stat"><span>Черновики</span><strong>{{ counts.DRAFT }}</strong></div>
+      <div class="stat"><span>Одобрено / в очереди</span><strong>{{ counts.APPROVED }}</strong></div>
+      <div class="stat"><span>Опубликовано</span><strong>{{ counts.PUBLISHED }}</strong></div>
+      <div class="stat"><span>Ошибки</span><strong>{{ counts.FAILED }}</strong></div>
+    </section>
+
+    <section class="panel create-panel">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">ШАГ 1</div>
+          <h2>Создать AI-черновик</h2>
+          <p class="muted">Укажи тему и данные бренда. AI создаст текст, сценарий или слайды.</p>
+        </div>
+      </div>
+      <form method="post" action="/generate" class="form-grid">
+        <label class="span-2">Тема публикации
+          <input name="topic" required maxlength="500" placeholder="Например: 5 ошибок при выборе CRM для малого бизнеса">
+        </label>
+        <label>Формат
+          <select name="content_format">
+            <option value="POST">Обычный пост</option>
+            <option value="CAROUSEL">Карусель (5 слайдов)</option>
+            <option value="REEL">Reels (сценарий + видео)</option>
+            <option value="STORY">Stories</option>
+          </select>
+        </label>
+        <label>Название компании
+          <input name="brand_name" value="Компания" required>
+        </label>
+        <label>Отрасль / продукт
+          <input name="industry" placeholder="Например: B2B SaaS, косметика, услуги">
+        </label>
+        <label>Целевая аудитория
+          <input name="audience" placeholder="Кто покупает и какие у него задачи">
+        </label>
+        <label>Тон коммуникации
+          <input name="tone" value="Экспертный, дружелюбный, ясный">
+        </label>
+        <label>Продукт / оффер / проверенные факты
+          <input name="offer" placeholder="Что продаём, УТП, цена, ссылка — только реальные данные">
+        </label>
+        <div class="span-2 form-actions">
+          <button class="primary" type="submit">Сгенерировать черновик <span>↗</span></button>
+          <span class="muted small">Изображения: {{ 'включены' if generate_visuals else 'выключены' }}. Генерация может занять несколько минут.</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="content-heading">
+      <div>
+        <div class="eyebrow">ШАГ 2</div>
+        <h2>Редакционная очередь</h2>
+      </div>
+      <span class="muted small">Последние 100 материалов</span>
+    </section>
+
+    {% if not items %}
+      <div class="empty panel">Пока нет материалов. Создай первый черновик выше.</div>
+    {% endif %}
+
+    {% for item in items %}
+      <article class="item panel">
+        <div class="item-head">
+          <div>
+            <div class="item-kicker">#{{ item.id }} · {{ item.format }} · {{ 'AI-план' if item.source == 'daily_ai' else 'ручной черновик' }} · создано {{ item.created_at }}</div>
+            <h3>{{ item.topic }}</h3>
+          </div>
+          <span class="status status-{{ item.status|lower }}">{{ item.status }}</span>
+        </div>
+
+        {% if item.media_urls %}
+          <div class="media-grid {% if item.format == 'CAROUSEL' %}carousel-grid{% endif %}">
+            {% for url in item.media_urls %}
+              {% if url.lower().endswith(('.mp4', '.mov', '.m4v')) %}
+                <video controls preload="metadata" src="{{ url }}"></video>
+              {% else %}
+                <a href="{{ url }}" target="_blank" rel="noreferrer"><img src="{{ url }}" alt="Медиа для публикации"></a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="notice">Для этого материала ещё не добавлен медиафайл.</div>
+        {% endif %}
+
+        {% if item.ai_payload.get('hook') %}
+          <div class="script-box"><strong>Хук Reels:</strong> {{ item.ai_payload.get('hook') }}<br><strong>Сценарий:</strong> {{ item.ai_payload.get('voiceover', '') }}<br><strong>CTA:</strong> {{ item.ai_payload.get('cta', '') }}</div>
+        {% endif %}
+        {% if item.ai_payload.get('video_generation_error') %}
+          <div class="notice error">Не удалось автоматически создать видео через Runway: {{ item.ai_payload.get('video_generation_error') }}. Сценарий сохранён — загрузите MP4 вручную.</div>
+        {% endif %}
+        {% if item.status == 'PUBLISHED' and item.metrics %}
+          <div class="metric-row">
+            {% for key, label in [('views', 'Просмотры'), ('reach', 'Охват'), ('total_interactions', 'Взаимодействия')] %}
+              {% if item.metrics.get(key) is not none %}<div><span>{{ label }}</span><strong>{{ item.metrics.get(key) }}</strong></div>{% endif %}
+            {% endfor %}
+          </div>
+        {% elif item.status == 'PUBLISHED' %}
+          <p class="muted small">Статистика появится после обработки Insights API (первый запрос через 48 часов).</p>
+        {% endif %}
+        {% if item.ai_payload.get('content_rationale') %}
+          <p class="muted rationale">AI-заметка: {{ item.ai_payload.get('content_rationale') }}</p>
+        {% endif %}
+
+        {% if item.status in ['DRAFT', 'REJECTED'] %}
+          <form method="post" action="/items/{{ item.id }}/edit" class="caption-form">
+            <label>Подпись / описание
+              <textarea name="caption" rows="5" maxlength="2200">{{ item.caption }}</textarea>
+            </label>
+            <button class="secondary" type="submit">Сохранить текст</button>
+          </form>
+          <form method="post" action="/items/{{ item.id }}/upload" enctype="multipart/form-data" class="upload-form">
+            <label>Загрузить / заменить медиа
+              <input type="file" name="files" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" required>
+            </label>
+            <button class="secondary" type="submit">Загрузить файл(ы)</button>
+            <span class="muted small">Для карусели загружай 2–10 изображений. Для Reels и видео Stories — MP4/MOV. Если RUNWAY_API_KEY не задан, Reels можно загрузить вручную.</span>
+          </form>
+          <form method="post" action="/items/{{ item.id }}/approve" class="approve-form">
+            <label>Дата и время публикации ({{ timezone }})
+              <input type="datetime-local" name="scheduled_local">
+            </label>
+            <div class="button-row">
+              <button class="primary" type="submit">Одобрить и поставить в очередь</button>
+            </div>
+            <p class="muted small">Оставь дату пустой, чтобы опубликовать при ближайшем запуске планировщика.</p>
+          </form>
+          <form method="post" action="/items/{{ item.id }}/reject" class="inline-form">
+            <button class="danger-ghost" type="submit">Отклонить</button>
+          </form>
+        {% elif item.status == 'FAILED' %}
+          <div class="notice error">{{ item.error_message }}</div>
+          <form method="post" action="/items/{{ item.id }}/retry"><button class="secondary" type="submit">Повторить публикацию сейчас</button></form>
+        {% elif item.status == 'APPROVED' %}
+          <div class="notice success">Запланировано на {{ item.scheduled_at }}. Публикация произойдёт автоматически.</div>
+        {% elif item.status == 'PUBLISHED' %}
+          <div class="notice success">Опубликовано: {{ item.published_at }} · Instagram media ID: {{ item.instagram_media_id }}</div>
+        {% endif %}
+        {% if item.error_message and item.status != 'FAILED' %}<p class="error-text">{{ item.error_message }}</p>{% endif %}
+      </article>
+    {% endfor %}
+
+    <footer>Instagram AI Content Factory · Не публикует без ручного подтверждения · Медиафайлы доступны Instagram по публичному HTTPS URL</footer>
+  </main>
+</body>
+</html>
